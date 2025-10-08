@@ -1,0 +1,96 @@
+# ================================================
+# FIXED .HTACCESS FOR ZURI WINES & SPIRITS POS
+# ================================================
+
+# Enable Rewrite Engine
+RewriteEngine On
+RewriteBase /
+
+# ================================================
+# IMPORTANT: ALLOW API DIRECTORY
+# ================================================
+
+# Don't rewrite API calls - let them through directly
+RewriteCond %{REQUEST_URI} ^/api/ [NC]
+RewriteRule ^ - [L]
+
+# ================================================
+# CLEAN URLS - HIDE .php EXTENSION
+# ================================================
+
+# Remove .php extension from URLs (but NOT in /api/)
+RewriteCond %{REQUEST_URI} !^/api/ [NC]
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}\.php -f
+RewriteRule ^([^/]+)/?$ $1.php [L,QSA]
+
+# Redirect .php to clean URL (but NOT in /api/)
+RewriteCond %{REQUEST_URI} !^/api/ [NC]
+RewriteCond %{THE_REQUEST} ^GET\ /[^?\s]+\.php
+RewriteRule ^(.+)\.php$ /$1 [R=301,L]
+
+# Handle index file
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^$ index.php [L]
+
+# ================================================
+# CACHE CONTROL
+# ================================================
+
+<IfModule mod_headers.c>
+    <FilesMatch "\.(php)$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </FilesMatch>
+</IfModule>
+
+# ================================================
+# SECURITY
+# ================================================
+
+# Block access to sensitive files
+<FilesMatch "^(config\.php|error\.log|.*\.sql|.*\.ini|.*\.bak|diagnostic\.php)$">
+    Require all denied
+</FilesMatch>
+
+# ALLOW API directory files
+<Directory "/api">
+    Require all granted
+</Directory>
+
+# Prevent directory listing
+Options -Indexes
+
+# Prevent access to hidden files
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+# ================================================
+# ERROR PAGES
+# ================================================
+
+ErrorDocument 403 /403.php
+ErrorDocument 404 /404.php
+
+# ================================================
+# PHP SETTINGS
+# ================================================
+
+<IfModule mod_php.c>
+    php_flag display_errors Off
+    php_flag log_errors On
+    php_value upload_max_filesize 10M
+    php_value post_max_size 10M
+    php_value max_execution_time 300
+</IfModule>
+
+# ================================================
+# cPanel PHP Handler
+# ================================================
+
+<IfModule mime_module>
+  AddHandler application/x-httpd-ea-php83 .php .php8 .phtml
+</IfModule>
