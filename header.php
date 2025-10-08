@@ -262,7 +262,21 @@ $page_title = $page_title ?? 'Dashboard';
                             <span>Sales History</span>
                         </a>
                     </li>
-                    
+                    <!-- For ALL users (sellers and owners) -->
+<a href="/cash-register.php" 
+   class="sidebar-link flex items-center gap-2 md:gap-3 px-3 md:px-4 py-2 md:py-3 rounded-lg text-gray-300 transition text-sm md:text-base <?php echo $page_title === 'Cash Register' ? 'active' : ''; ?>">
+    <i class="fas fa-cash-register w-4 md:w-5"></i>
+    <span>Cash Register</span>
+</a>
+
+<!-- For OWNERS only -->
+<?php if ($_SESSION['role'] === 'owner'): ?>
+<a href="/register-history.php" 
+   class="sidebar-link flex items-center gap-2 md:gap-3 px-3 md:px-4 py-2 md:py-3 rounded-lg text-gray-300 transition text-sm md:text-base <?php echo $page_title === 'Register History' ? 'active' : ''; ?>">
+    <i class="fas fa-history w-4 md:w-5"></i>
+    <span>Register History</span>
+</a>
+<?php endif; ?>
                     
                     <li>
                         <a href="/expenses.php" class="sidebar-link flex items-center gap-2 md:gap-3 px-3 md:px-4 py-2 md:py-3 rounded-lg text-gray-300 transition text-sm md:text-base <?php echo basename($_SERVER['PHP_SELF']) === 'expenses.php' ? 'active' : ''; ?>">
