@@ -1,15 +1,35 @@
 <?php
 /**
- * Complete Working Branch Management API
- * api/branches.php
+ * FIXED - Complete Working Branch Management API
+ * Save as: api/branches.php
  */
 
-require_once '../config.php';
-requireOwner();
+// Prevent any output before headers
+ob_start();
 
+// Include config
+$configPath = dirname(__DIR__) . '/config.php';
+if (!file_exists($configPath)) {
+    http_response_code(500);
+    header('Content-Type: application/json');
+    echo json_encode(['success' => false, 'message' => 'Config file not found', 'path' => $configPath]);
+    exit;
+}
+
+require_once $configPath;
+
+// Check authentication
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'owner') {
+    http_response_code(403);
+    header('Content-Type: application/json');
+    echo json_encode(['success' => false, 'message' => 'Access denied']);
+    exit;
+}
+
+// Set JSON header
 header('Content-Type: application/json');
 
-// Get action from POST or GET
+// Get action
 $action = '';
 if (isset($_POST['action'])) {
     $action = sanitize($_POST['action']);
@@ -67,12 +87,12 @@ if ($action === 'save_branch') {
     $opening_time = isset($_POST['opening_time']) && !empty($_POST['opening_time']) ? sanitize($_POST['opening_time']) : null;
     $closing_time = isset($_POST['closing_time']) && !empty($_POST['closing_time']) ? sanitize($_POST['closing_time']) : null;
     
-    // Validate required fields
+    // Validate
     if (empty($name) || empty($code)) {
         respond(false, 'Branch name and code are required', null, 400);
     }
     
-    // Check if code exists (excluding current record)
+    // Check if code exists
     $checkCode = $conn->prepare("SELECT id FROM branches WHERE code = ? AND id != ?");
     $checkCode->bind_param("si", $code, $id);
     $checkCode->execute();
@@ -82,7 +102,7 @@ if ($action === 'save_branch') {
     $checkCode->close();
     
     if ($id > 0) {
-        // Update existing branch
+        // Update
         $stmt = $conn->prepare("UPDATE branches SET 
             name=?, code=?, address=?, city=?, phone=?, email=?, 
             manager_id=?, status=?, opening_time=?, closing_time=?
@@ -98,7 +118,7 @@ if ($action === 'save_branch') {
         }
         $stmt->close();
     } else {
-        // Create new branch
+        // Create
         $stmt = $conn->prepare("INSERT INTO branches 
             (name, code, address, city, phone, email, manager_id, status, opening_time, closing_time) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
@@ -108,7 +128,7 @@ if ($action === 'save_branch') {
         if ($stmt->execute()) {
             $branchId = $conn->insert_id;
             
-            // Copy all products from main branch with 0 stock
+            // Copy products
             $conn->query("INSERT INTO branch_inventory (branch_id, product_id, stock_quantity, reorder_level)
                          SELECT $branchId, id, 0, reorder_level 
                          FROM products WHERE status = 'active'");
@@ -126,7 +146,6 @@ if ($action === 'save_branch') {
 if ($action === 'delete_branch') {
     $id = intval($_POST['id']);
     
-    // Check if it's the main branch
     $checkMain = $conn->query("SELECT code FROM branches WHERE id = $id");
     if (!$checkMain) {
         respond(false, 'Database error', null, 500);
@@ -138,7 +157,6 @@ if ($action === 'delete_branch') {
         respond(false, 'Cannot delete the main branch', null, 400);
     }
     
-    // Check if branch has active sales
     $checkSales = $conn->query("SELECT COUNT(*) as count FROM sales WHERE branch_id = $id");
     $salesCount = $checkSales->fetch_assoc()['count'];
     
@@ -149,13 +167,8 @@ if ($action === 'delete_branch') {
     $conn->begin_transaction();
     
     try {
-        // Delete branch inventory
         $conn->query("DELETE FROM branch_inventory WHERE branch_id = $id");
-        
-        // Unassign users
         $conn->query("UPDATE users SET branch_id = NULL WHERE branch_id = $id");
-        
-        // Delete branch
         $conn->query("DELETE FROM branches WHERE id = $id");
         
         $conn->commit();
@@ -235,7 +248,7 @@ if ($action === 'initiate_transfer') {
     $conn->begin_transaction();
     
     try {
-        // Check source branch stock
+        // Check stock
         $checkStock = $conn->prepare("SELECT stock_quantity FROM branch_inventory 
                                       WHERE branch_id = ? AND product_id = ?");
         $checkStock->bind_param("ii", $fromBranchId, $productId);
@@ -256,7 +269,7 @@ if ($action === 'initiate_transfer') {
         // Generate transfer number
         $transferNumber = 'TRF-' . date('Ymd') . '-' . strtoupper(substr(md5(uniqid(rand(), true)), 0, 6));
         
-        // Create transfer record
+        // Create transfer
         $stmt = $conn->prepare("INSERT INTO stock_transfers 
             (transfer_number, from_branch_id, to_branch_id, product_id, quantity, transfer_date, initiated_by, status, notes)
             VALUES (?, ?, ?, ?, ?, NOW(), ?, 'pending', ?)");
@@ -266,7 +279,7 @@ if ($action === 'initiate_transfer') {
         $transferId = $conn->insert_id;
         $stmt->close();
         
-        // Deduct from source branch
+        // Deduct from source
         $conn->query("UPDATE branch_inventory 
                      SET stock_quantity = stock_quantity - $quantity 
                      WHERE branch_id = $fromBranchId AND product_id = $productId");
@@ -288,7 +301,7 @@ if ($action === 'complete_transfer') {
     $conn->begin_transaction();
     
     try {
-        // Get transfer details
+        // Get transfer
         $stmt = $conn->prepare("SELECT * FROM stock_transfers WHERE id = ? AND status = 'pending'");
         $stmt->bind_param("i", $transferId);
         $stmt->execute();
@@ -299,7 +312,7 @@ if ($action === 'complete_transfer') {
             throw new Exception('Transfer not found or already completed');
         }
         
-        // Add to destination branch
+        // Add to destination
         $checkDest = $conn->query("SELECT id FROM branch_inventory 
                                   WHERE branch_id = {$transfer['to_branch_id']} 
                                   AND product_id = {$transfer['product_id']}");
@@ -315,7 +328,7 @@ if ($action === 'complete_transfer') {
                          FROM products WHERE id = {$transfer['product_id']}");
         }
         
-        // Update transfer status
+        // Update transfer
         $userId = $_SESSION['user_id'];
         $conn->query("UPDATE stock_transfers 
                      SET status = 'completed', received_by = $userId, completed_at = NOW() 
@@ -374,52 +387,5 @@ if ($action === 'get_transfers') {
     respond(true, 'Transfers retrieved', ['transfers' => $transfers]);
 }
 
-// ==================== SET USER BRANCH ====================
-if ($action === 'set_user_branch') {
-    $userId = intval($_POST['user_id']);
-    $branchId = isset($_POST['branch_id']) && !empty($_POST['branch_id']) ? intval($_POST['branch_id']) : null;
-    
-    $stmt = $conn->prepare("UPDATE users SET branch_id = ? WHERE id = ?");
-    $stmt->bind_param("ii", $branchId, $userId);
-    
-    if ($stmt->execute()) {
-        logActivity('USER_BRANCH_SET', "Set user ID $userId to branch ID $branchId");
-        respond(true, 'User branch updated successfully');
-    } else {
-        respond(false, 'Failed to update user branch: ' . $stmt->error, null, 500);
-    }
-    $stmt->close();
-}
-
-// ==================== GET BRANCH USERS ====================
-if ($action === 'get_branch_users') {
-    $branchId = isset($_GET['branch_id']) ? intval($_GET['branch_id']) : 0;
-    
-    $where = $branchId > 0 ? "WHERE u.branch_id = $branchId AND u.status = 'active'" : "WHERE u.status = 'active'";
-    
-    $query = "SELECT u.*, b.name as branch_name, b.code as branch_code,
-              (SELECT COUNT(*) FROM sales WHERE user_id = u.id AND DATE(sale_date) = CURDATE()) as today_sales,
-              (SELECT COALESCE(SUM(total_amount), 0) FROM sales WHERE user_id = u.id AND DATE(sale_date) = CURDATE()) as today_revenue,
-              (SELECT MAX(sale_date) FROM sales WHERE user_id = u.id) as last_sale
-              FROM users u
-              LEFT JOIN branches b ON u.branch_id = b.id
-              $where
-              ORDER BY u.name ASC";
-    
-    $result = $conn->query($query);
-    
-    if (!$result) {
-        respond(false, 'Database error: ' . $conn->error, null, 500);
-    }
-    
-    $users = [];
-    while ($row = $result->fetch_assoc()) {
-        $users[] = $row;
-    }
-    
-    respond(true, 'Users retrieved', ['users' => $users]);
-}
-
 // ==================== NO ACTION FOUND ====================
 respond(false, 'Invalid action: ' . $action, null, 400);
-?>
