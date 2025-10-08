@@ -199,65 +199,43 @@ include 'header.php';
 </div>
 
 <script>
+// COMPLETE FIXED JAVASCRIPT FOR branches.php
+// Replace the entire <script> section with this
+
 const primaryColor = '<?php echo $settings['primary_color']; ?>';
 const currency = '<?php echo $settings['currency']; ?>';
 let branches = [];
 let users = [];
 
-// Get the correct API base URL
 function getApiUrl(endpoint) {
-    // Remove any leading slashes from endpoint
-    endpoint = endpoint.replace(/^\/+/, '');
-    
-    // Get the current location
+    // Simple and reliable URL construction
     const protocol = window.location.protocol;
     const host = window.location.host;
-    const pathname = window.location.pathname;
     
-    // Get the base path (everything before the last segment)
-    const basePath = pathname.substring(0, pathname.lastIndexOf('/'));
+    // Build clean API URL - no double slashes
+    const apiUrl = `${protocol}//${host}/api/${endpoint}`;
     
-    // Construct the full API URL
-    const apiUrl = `${protocol}//${host}${basePath}/api/${endpoint}`;
-    
-    console.log('🔗 API URL constructed:', apiUrl);
+    console.log('🔗 API URL:', apiUrl);
     return apiUrl;
 }
 
-// Debug function
-function debugLog(message, data = null) {
-    console.log(`🔍 ${message}`, data);
-    const debugInfo = document.getElementById('debugInfo');
-    const debugContent = document.getElementById('debugContent');
-    
-    if (debugInfo && debugContent) {
-        debugInfo.style.display = 'block';
-        const timestamp = new Date().toLocaleTimeString();
-        const logEntry = `[${timestamp}] ${message}${data ? ': ' + JSON.stringify(data, null, 2) : ''}`;
-        debugContent.innerHTML += logEntry + '\n';
-    }
-}
-
-// Initialize page
+// Initialize
 document.addEventListener('DOMContentLoaded', function() {
-    debugLog('Page loaded, initializing...');
+    console.log('📄 Page loaded, initializing...');
     loadBranches();
     loadUsers();
 });
 
-// Load branches with improved error handling
+// Load branches
 async function loadBranches() {
     showLoading();
-    debugLog('Starting to load branches');
+    console.log('🔄 Starting to load branches...');
     
     try {
         const apiUrl = getApiUrl('branches.php');
-        const params = new URLSearchParams({
-            action: 'get_branches'
-        });
+        const fullUrl = `${apiUrl}?action=get_branches`;
         
-        const fullUrl = `${apiUrl}?${params.toString()}`;
-        debugLog('Fetching from', fullUrl);
+        console.log('📡 Fetching from:', fullUrl);
         
         const response = await fetch(fullUrl, {
             method: 'GET',
@@ -268,37 +246,35 @@ async function loadBranches() {
             credentials: 'same-origin'
         });
         
-        debugLog('Response status', { status: response.status, ok: response.ok });
+        console.log('📨 Response status:', response.status, 'OK:', response.ok);
         
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            const errorText = await response.text();
+            console.error('❌ Response error:', errorText);
+            throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 100)}`);
         }
         
         const contentType = response.headers.get('content-type');
-        debugLog('Content-Type', contentType);
-        
         if (!contentType || !contentType.includes('application/json')) {
             const text = await response.text();
-            debugLog('Non-JSON response received', text.substring(0, 200));
+            console.error('❌ Non-JSON response:', text.substring(0, 200));
             throw new Error('Server returned non-JSON response');
         }
         
         const data = await response.json();
-        debugLog('Data received', { success: data.success, branchCount: data.data?.branches?.length });
+        console.log('✅ Data received:', data.success, 'Branches:', data.data?.branches?.length);
         
         if (data.success) {
             branches = data.data.branches || [];
             renderBranches();
-            showToast(`Loaded ${branches.length} branches successfully`, 'success');
+            showToast(`✅ Loaded ${branches.length} branches`, 'success');
         } else {
             throw new Error(data.message || 'Failed to load branches');
         }
     } catch (error) {
         console.error('❌ Error loading branches:', error);
-        debugLog('ERROR', { message: error.message, stack: error.stack });
-        showToast('Failed to load branches: ' + error.message, 'error');
+        showToast('Failed to load: ' + error.message, 'error');
         
-        // Show empty state on error
         document.getElementById('branchesGrid').innerHTML = `
             <div class="col-span-full branch-card text-center py-12 bg-red-50 border-2 border-red-200">
                 <i class="fas fa-exclamation-triangle text-6xl text-red-400 mb-4"></i>
@@ -311,6 +287,34 @@ async function loadBranches() {
         `;
     } finally {
         hideLoading();
+    }
+}
+
+// Load users
+async function loadUsers() {
+    try {
+        const apiUrl = getApiUrl('users.php');
+        console.log('📡 Loading users from:', apiUrl);
+        
+        const response = await fetch(apiUrl, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            credentials: 'same-origin'
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            users = data.data.users || [];
+            populateManagerDropdown();
+            console.log('✅ Loaded', users.length, 'users');
+        }
+    } catch (error) {
+        console.error('❌ Error loading users:', error);
     }
 }
 
@@ -364,7 +368,7 @@ function renderBranches() {
                     <i class="fas fa-edit mr-1"></i>Edit
                 </button>
                 ${branch.code !== 'MAIN' ? `
-                <button onclick="event.stopPropagation(); deleteBranch(${branch.id}, '${escapeHtml(branch.name)}')" 
+                <button onclick="event.stopPropagation(); deleteBranch(${branch.id}, '${escapeHtml(branch.name).replace(/'/g, "\\'")}' )" 
                         class="px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold transition">
                     <i class="fas fa-trash"></i>
                 </button>
@@ -374,36 +378,7 @@ function renderBranches() {
     `).join('');
 }
 
-// Load users for manager dropdown
-async function loadUsers() {
-    try {
-        const apiUrl = getApiUrl('users.php');
-        debugLog('Loading users from', apiUrl);
-        
-        const response = await fetch(apiUrl, {
-            headers: {
-                'Accept': 'application/json'
-            },
-            credentials: 'same-origin'
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            users = data.data.users || [];
-            populateManagerDropdown();
-            debugLog('Loaded users', { count: users.length });
-        }
-    } catch (error) {
-        console.error('Error loading users:', error);
-        debugLog('ERROR loading users', error.message);
-    }
-}
-
+// Populate manager dropdown
 function populateManagerDropdown() {
     const select = document.getElementById('branchManager');
     if (select) {
@@ -455,8 +430,6 @@ document.getElementById('branchForm').addEventListener('submit', async function(
     
     try {
         const apiUrl = getApiUrl('branches.php');
-        debugLog('Saving branch to', apiUrl);
-        
         const response = await fetch(apiUrl, {
             method: 'POST',
             body: formData,
@@ -464,7 +437,7 @@ document.getElementById('branchForm').addEventListener('submit', async function(
         });
         
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            throw new Error(`HTTP ${response.status}`);
         }
         
         const data = await response.json();
@@ -478,7 +451,6 @@ document.getElementById('branchForm').addEventListener('submit', async function(
         }
     } catch (error) {
         showToast('Connection error: ' + error.message, 'error');
-        debugLog('ERROR saving branch', error.message);
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-save mr-2"></i>Save Branch';
