@@ -87,7 +87,8 @@ try {
     $customerId = isset($_POST['customer_id']) && !empty($_POST['customer_id']) ? intval($_POST['customer_id']) : null;
     $discountAmount = isset($_POST['discount_amount']) ? floatval($_POST['discount_amount']) : 0;
     $notes = isset($_POST['notes']) ? trim($_POST['notes']) : '';
-    
+    $registerSessionId = isset($_POST['register_session_id']) && !empty($_POST['register_session_id']) 
+    ? intval($_POST['register_session_id']) : null;
     // Sanitize strings
     if (function_exists('sanitize')) {
         $paymentMethod = sanitize($paymentMethod);
@@ -147,22 +148,22 @@ try {
         
         // Insert sale
         $sql = "INSERT INTO sales (
-            sale_number, user_id, customer_id, subtotal, tax_amount, 
-            discount_amount, total_amount, payment_method, mpesa_reference, 
-            amount_paid, change_amount, sale_date, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    sale_number, user_id, register_session_id, customer_id, subtotal, tax_amount, 
+    discount_amount, total_amount, payment_method, mpesa_reference, 
+    amount_paid, change_amount, sale_date, notes
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
-        $stmt = $conn->prepare($sql);
-        if (!$stmt) {
-            throw new Exception('Database error: ' . $conn->error);
-        }
+       $stmt = $conn->prepare($sql);
+if (!$stmt) {
+    throw new Exception('Database error: ' . $conn->error);
+}
         
         $stmt->bind_param(
-            "siidddsssddss",
-            $saleNumber, $userId, $customerId, $subtotal, $taxAmount,
-            $discountAmount, $totalAmount, $paymentMethod, $mpesaReference,
-            $amountPaid, $changeAmount, $saleDate, $notes
-        );
+    "siiidddsssddss",
+    $saleNumber, $userId, $registerSessionId, $customerId, $subtotal, $taxAmount,
+    $discountAmount, $totalAmount, $paymentMethod, $mpesaReference,
+    $amountPaid, $changeAmount, $saleDate, $notes
+);
         
         if (!$stmt->execute()) {
             throw new Exception('Failed to insert sale: ' . $stmt->error);
