@@ -1021,6 +1021,161 @@ include 'header.php';
 </div>
 
 <script>
+// Add this at the top of the existing pos.php JavaScript section
+
+let activeRegisterSession = null;
+
+// Check for active register session
+async function checkRegisterSession() {
+    try {
+        const params = new URLSearchParams({ action: 'get_active_session' });
+        const response = await fetch('/api/cash-register.php?' + params);
+        const data = await response.json();
+        
+        if (data.success && data.data.session) {
+            activeRegisterSession = data.data.session;
+            console.log('✅ Active register session found:', activeRegisterSession.id);
+        } else {
+            console.warn('⚠️ No active register session');
+            showRegisterWarning();
+        }
+    } catch (error) {
+        console.error('Error checking register session:', error);
+        // Don't show warning on error - might be optional feature
+    }
+}
+
+function showRegisterWarning() {
+    // Remove existing warning if any
+    const existing = document.getElementById('registerWarning');
+    if (existing) existing.remove();
+    
+    const warning = document.createElement('div');
+    warning.id = 'registerWarning';
+    warning.className = 'fixed top-20 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-white px-4 py-3 rounded-xl shadow-2xl z-[100] max-w-md';
+    warning.innerHTML = `
+        <div class="flex items-center gap-3">
+            <i class="fas fa-exclamation-triangle text-xl"></i>
+            <div class="flex-1">
+                <p class="font-bold text-sm">Cash Register Not Opened</p>
+                <p class="text-xs text-white/90">Open register before making sales</p>
+            </div>
+            <button onclick="goToRegister()" class="px-3 py-1.5 bg-white text-yellow-600 rounded-lg font-semibold hover:bg-yellow-50 transition text-xs">
+                Open Now
+            </button>
+        </div>
+    `;
+    document.body.appendChild(warning);
+}
+
+function goToRegister() {
+    window.location.href = '/cash-register.php';
+}
+
+// Modify the completeSale function to check for active session
+// Replace the existing completeSale function with this updated version:
+
+function showPaymentModal() {
+    if (cart.length === 0) return;
+    
+    // Check if register is open - ONLY WARN, DON'T BLOCK
+    if (!activeRegisterSession) {
+        if (!confirm('⚠️ Cash register is not open!\n\nIt is recommended to open the register before making sales.\n\nContinue anyway?')) {
+            return;
+        }
+    }
+    
+    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const taxRate = parseFloat(settings.tax_rate) || 0;
+    const tax = subtotal * (taxRate / 100);
+    const total = subtotal + tax;
+    const amountPaid = parseFloat(document.getElementById('amountPaid').value) || 0;
+    
+    if (amountPaid < total) {
+        showNotification('Insufficient payment amount', 'error');
+        return;
+    }
+    
+    if (selectedPaymentMethod === 'mpesa') {
+        const mpesaRef = document.getElementById('mpesaReference').value.trim();
+        if (!mpesaRef) {
+            showNotification('Please enter M-Pesa reference', 'error');
+            return;
+        }
+    }
+    
+    const btn = document.getElementById('completeSaleBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processing...';
+    
+    const saleItems = cart.map(item => ({
+        id: parseInt(item.id),
+        name: String(item.name),
+        price: parseFloat(item.price),
+        quantity: parseInt(item.quantity),
+        discount: 0
+    }));
+    
+    const formData = new FormData();
+    formData.append('items', JSON.stringify(saleItems));
+    formData.append('subtotal', subtotal.toFixed(2));
+    formData.append('tax_amount', tax.toFixed(2));
+    formData.append('total_amount', total.toFixed(2));
+    formData.append('payment_method', selectedPaymentMethod);
+    formData.append('amount_paid', amountPaid.toFixed(2));
+    formData.append('change_amount', (amountPaid - total).toFixed(2));
+    formData.append('discount_amount', '0.00');
+    formData.append('notes', '');
+    formData.append('mpesa_reference', selectedPaymentMethod === 'mpesa' ? document.getElementById('mpesaReference').value.trim() : '');
+    
+    // Add register session ID
+    formData.append('register_session_id', activeRegisterSession.id);
+    
+    fetch('api/complete-sale.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.text())
+    .then(text => {
+        let data;
+        try {
+            data = JSON.parse(text);
+        } catch (e) {
+            throw new Error('Server returned invalid response');
+        }
+        
+        if (data.success) {
+            showNotification('Sale completed successfully!', 'success');
+            cart = [];
+            updateCart();
+            closePaymentModal();
+            
+            if (currentDraftId) {
+                deleteDraft(currentDraftId, false);
+                currentDraftId = null;
+            }
+            
+            if (confirm(`Sale completed!\n\nSale #${data.data.sale_number}\nTotal: ${settings.currency} ${parseFloat(data.data.total).toFixed(2)}\nChange: ${settings.currency} ${parseFloat(data.data.change).toFixed(2)}\n\nPrint receipt?`)) {
+                window.open(`receipt.php?id=${data.data.sale_id}`, '_blank');
+            }
+        } else {
+            showNotification(data.message || 'Failed to complete sale', 'error');
+        }
+    })
+    .catch(error => {
+        showNotification('Connection error. Please try again.', 'error');
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-check-circle mr-2"></i>Complete Sale';
+    });
+}
+
+// Call this on page load
+document.addEventListener('DOMContentLoaded', function() {
+    // ... existing code ...
+    checkRegisterSession();
+});
 let cart = [];
 let selectedPaymentMethod = 'cash';
 let draftOrders = JSON.parse(localStorage.getItem('draftOrders') || '[]');
